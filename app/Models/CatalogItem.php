@@ -25,6 +25,7 @@ class CatalogItem extends Model
         'roast_level',
         'process',
         'flavor_notes',
+        'coffee_attributes',
         'field_values',
         'marketplace_links',
         'price_min',
@@ -37,6 +38,7 @@ class CatalogItem extends Model
     {
         return [
             'flavor_notes' => 'array',
+            'coffee_attributes' => 'array',
             'field_values' => 'array',
             'marketplace_links' => 'array',
             'price_min' => 'float',

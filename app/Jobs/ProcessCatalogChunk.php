@@ -60,6 +60,7 @@ class ProcessCatalogChunk implements ShouldQueue
                 'roast_level' => $product['roast_level'] ?? 'Medium',
                 'process' => $product['process'] ?? 'Full Wash',
                 'flavor_notes' => array_values((array) $flavorNotes),
+                'coffee_attributes' => $product['coffee_attributes'] ?? null,
                 'field_values' => $product['field_values'] ?? null,
                 'marketplace_links' => $product['marketplace_links'] ?? null,
                 'price_min' => (float) ($product['price_min'] ?? $product['price'] ?? 0),
