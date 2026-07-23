@@ -10,7 +10,7 @@ php artisan down || true
 git pull origin main
 
 # Install PHP dependencies
-composer install --no-interaction --prefer-dist --optimize-autoloader
+composer install --no-interaction --prefer-dist --optimize-autoloader --ignore-platform-req=ext-sodium
 
 # Run database migrations
 php artisan migrate --force

@@ -22,5 +22,5 @@ jobs:
           key: ${{ secrets.HOSTINGER_SSH_KEY }}
           port: ${{ secrets.HOSTINGER_PORT || 65002 }}
           script: |
-            cd ~/domains/roaster.crema.supply/core3
+            cd ~/domains/s3.crema.supply/public_html/core3
             bash deploy.sh

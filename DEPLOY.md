@@ -7,8 +7,8 @@ This guide provides the exact SSH CLI commands and setup instructions to host **
 ## 📍 Server Architecture Overview
 
 - **Hostinger Server SSH**: `ssh -p 65002 u876211904@145.79.14.146`
-- **Application Core Location**: `~/domains/roaster.crema.supply/core3`
-- **Web Docroot (Public Traffic)**: `~/domains/roaster.crema.supply/public_html` (or subdomain web root)
+- **Application Core Location**: `~/domains/s3.crema.supply/public_html/core3`
+- **Web Docroot (Public Traffic)**: `~/domains/s3.crema.supply/public_html`
 
 ---
 
