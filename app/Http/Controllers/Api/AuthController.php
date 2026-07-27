@@ -64,8 +64,12 @@ class AuthController extends Controller
 
         $customer = Customer::where('email', $credentials['email'])->first();
 
-        if (!$customer || !Hash::check($credentials['password'], $customer->password)) {
-            return response()->json(['message' => 'Invalid credentials'], 401);
+        if (!$customer) {
+            return response()->json(['message' => 'No account found with this email address.'], 401);
+        }
+
+        if (!Hash::check($credentials['password'], $customer->password)) {
+            return response()->json(['message' => 'Incorrect password. Please try again.'], 401);
         }
 
         $tokenResult = $customer->createToken('Crema Passport Token');
