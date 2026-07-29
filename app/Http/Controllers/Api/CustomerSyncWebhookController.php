@@ -4,9 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -15,8 +14,7 @@ use Illuminate\Support\Facades\Log;
  * Fires after S3 customer register/login to push a lightweight profile
  * projection to S1. S1 stores id, name, email, whatsapp_number only.
  *
- * This is a fire-and-forget best-effort sync. Failures are logged but
- * do not block the auth flow.
+ * Writes directly to S1's database to bypass Cloudflare proxy.
  */
 class CustomerSyncWebhookController extends Controller
 {
@@ -26,29 +24,35 @@ class CustomerSyncWebhookController extends Controller
      */
     public static function pushToS1(Customer $customer): void
     {
-        // Dispatch to queue so it doesn't block the auth response
-        dispatch(function () use ($customer) {
-            $s1Url = rtrim(env('S1_API_BASE_URL', 'https://roaster.crema.supply'), '/') . '/api/customer/sync/customer';
+        try {
+            // Match by email (legacy S1 customers may have different UUIDs)
+            $existing = DB::connection('s1_sync')->table('customers')
+                ->where('email', strtolower(trim($customer->email)))
+                ->whereNull('deleted_at')
+                ->first();
 
-            $payload = [
-                'id' => $customer->id,
-                'name' => $customer->name,
-                'email' => $customer->email,
-                'whatsapp_number' => $customer->whatsapp_number,
-                'phone_number' => $customer->phone_number,
-            ];
-
-            try {
-                $response = Http::timeout(5)
-                    ->retry(2, 100)
-                    ->post($s1Url, $payload);
-
-                if (!$response->successful()) {
-                    Log::warning("Customer sync to S1 failed for {$customer->email}: HTTP {$response->status()}");
-                }
-            } catch (\Throwable $e) {
-                Log::warning("Customer sync to S1 failed for {$customer->email}: " . $e->getMessage());
+            if ($existing) {
+                DB::connection('s1_sync')->table('customers')
+                    ->where('id', $existing->id)
+                    ->update([
+                        'name' => $customer->name,
+                        'whatsapp_number' => $customer->whatsapp_number,
+                        'phone_number' => $customer->phone_number,
+                        'updated_at' => now(),
+                    ]);
+            } else {
+                DB::connection('s1_sync')->table('customers')->insert([
+                    'id' => $customer->id,
+                    'name' => $customer->name,
+                    'email' => strtolower(trim($customer->email)),
+                    'whatsapp_number' => $customer->whatsapp_number,
+                    'phone_number' => $customer->phone_number,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
             }
-        })->onConnection('sync');
+        } catch (\Throwable $e) {
+            Log::warning("Customer sync to S1 failed for {$customer->email}: " . $e->getMessage());
+        }
     }
 }
