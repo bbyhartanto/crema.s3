@@ -4,23 +4,63 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-s3
+  cancel-in-progress: false
 
 jobs:
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.HOSTINGER_HOST || '145.79.14.146' }}
+      SSH_USER: ${{ secrets.HOSTINGER_USER || 'u876211904' }}
+      SSH_PORT: ${{ secrets.HOSTINGER_PORT || '65002' }}
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY || secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$SSH_PORT" -t rsa,ecdsa,ed25519 "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
       - name: Execute Remote Deployment via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.HOSTINGER_HOST }}
-          username: ${{ secrets.HOSTINGER_USER }}
-          key: ${{ secrets.HOSTINGER_SSH_KEY }}
-          port: ${{ secrets.HOSTINGER_PORT || 65002 }}
-          script: |
-            cd ~/domains/s3.crema.supply/public_html/core3
-            bash deploy.sh
+        shell: bash
+        run: |
+          write_remote_script() {
+            cat <<'REMOTE'
+          set -euo pipefail
+          cd ~/domains/s3.crema.supply/public_html/core3
+          bash deploy.sh
+          REMOTE
+          }
+
+          attempt=0
+          max=5
+          until [ "$attempt" -ge "$max" ]; do
+            attempt=$((attempt + 1))
+            echo "SSH attempt $attempt/$max…"
+            if write_remote_script | ssh -p "$SSH_PORT" -i ~/.ssh/deploy_key \
+                -o StrictHostKeyChecking=accept-new \
+                -o BatchMode=yes \
+                -o ConnectTimeout=15 \
+                -o ServerAliveInterval=15 \
+                -o ServerAliveCountMax=3 \
+                "$SSH_USER@$SSH_HOST" 'bash -se'; then
+              echo "Deploy succeeded on SSH attempt $attempt."
+              exit 0
+            fi
+            rc=$?
+            echo "SSH attempt $attempt failed (rc=$rc). Sleeping before retry…"
+            sleep $((attempt * 5))
+          done
+          echo "::error::SSH to $SSH_USER@$SSH_HOST:$SSH_PORT failed after $max attempts."
+          exit 255
+
