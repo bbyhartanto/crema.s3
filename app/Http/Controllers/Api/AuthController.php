@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\CustomerSyncWebhookController;
 use App\Models\Customer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -37,6 +38,9 @@ class AuthController extends Controller
 
         $tokenResult = $customer->createToken('Crema Passport Token');
         $accessToken = $tokenResult->accessToken;
+
+        // Sync customer profile to S1 for business logic (orders, addresses, etc.)
+        CustomerSyncWebhookController::pushToS1($customer);
 
         return response()->json([
             'token_type' => 'Bearer',
@@ -74,6 +78,9 @@ class AuthController extends Controller
 
         $tokenResult = $customer->createToken('Crema Passport Token');
         $accessToken = $tokenResult->accessToken;
+
+        // Sync customer profile to S1 for business logic (orders, addresses, etc.)
+        CustomerSyncWebhookController::pushToS1($customer);
 
         return response()->json([
             'token_type' => 'Bearer',
@@ -129,11 +136,15 @@ class AuthController extends Controller
 
     /**
      * Issue a central Crema Passport password reset token and recovery link.
+     * The reset URL points to the storefront the request came from.
+     * The email is sent via S1 since S1 owns the store context + notification setup.
      */
     public function forgotPassword(Request $request): JsonResponse
     {
         $request->validate([
             'email' => 'required|email',
+            'store_slug' => 'nullable|string',
+            'store_domain' => 'nullable|string',
         ]);
 
         $email = strtolower(trim($request->email));
@@ -142,11 +153,35 @@ class AuthController extends Controller
         if ($customer && $customer->is_active) {
             $token = \Illuminate\Support\Facades\Password::broker('customers')->createToken($customer);
 
-            $platformBaseUrl = env('FRONTEND_URL', 'http://localhost:3000');
-            $resetUrl = $platformBaseUrl . '/reset-password?' . http_build_query([
+            // Build the reset URL pointing to the correct storefront
+            $baseUrl = env('FRONTEND_URL', 'http://localhost:3000');
+            $storeSlug = $request->input('store_slug');
+            $storeDomain = $request->input('store_domain');
+
+            // If store context is provided, build tenant-scoped URL
+            if ($storeSlug) {
+                $baseUrl .= '/' . $storeSlug;
+            } elseif ($storeDomain) {
+                $baseUrl = 'https://' . preg_replace('/^https?:\/\//', '', $storeDomain);
+            }
+
+            $resetUrl = $baseUrl . '/reset-password?' . http_build_query([
                 'token' => $token,
                 'email' => $customer->email,
             ]);
+
+            // Delegate email sending to S1 (it owns store context + mail config)
+            $s1BaseUrl = env('S1_API_BASE_URL', 'http://127.0.0.1:8000');
+            try {
+                \Illuminate\Support\Facades\Http::timeout(5)->post(rtrim($s1BaseUrl, '/') . '/api/customer/send-reset-email', [
+                    'email' => $customer->email,
+                    'reset_url' => $resetUrl,
+                    'store_slug' => $storeSlug,
+                    'store_domain' => $storeDomain,
+                ]);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning("S3 forgotPassword: failed to delegate email to S1: " . $e->getMessage());
+            }
 
             return response()->json([
                 'message' => 'If an account exists for that email, a central Crema Passport recovery link has been sent.',
