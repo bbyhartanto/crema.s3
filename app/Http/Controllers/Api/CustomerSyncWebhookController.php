@@ -26,25 +26,29 @@ class CustomerSyncWebhookController extends Controller
      */
     public static function pushToS1(Customer $customer): void
     {
-        $s1BaseUrl = env('S1_API_BASE_URL', 'http://127.0.0.1:8000');
-        $url = rtrim($s1BaseUrl, '/') . '/api/customer/sync/customer';
+        // Dispatch to queue so it doesn't block the auth response
+        dispatch(function () use ($customer) {
+            $s1Url = rtrim(env('S1_API_BASE_URL', 'https://roaster.crema.supply'), '/') . '/api/customer/sync/customer';
 
-        $payload = [
-            'id' => $customer->id,
-            'name' => $customer->name,
-            'email' => $customer->email,
-            'whatsapp_number' => $customer->whatsapp_number,
-            'phone_number' => $customer->phone_number,
-        ];
+            $payload = [
+                'id' => $customer->id,
+                'name' => $customer->name,
+                'email' => $customer->email,
+                'whatsapp_number' => $customer->whatsapp_number,
+                'phone_number' => $customer->phone_number,
+            ];
 
-        try {
-            $response = Http::timeout(5)->post($url, $payload);
+            try {
+                $response = Http::timeout(5)
+                    ->retry(2, 100)
+                    ->post($s1Url, $payload);
 
-            if (!$response->successful()) {
-                Log::warning("Customer sync to S1 failed for {$customer->email}: " . $response->body());
+                if (!$response->successful()) {
+                    Log::warning("Customer sync to S1 failed for {$customer->email}: HTTP {$response->status()}");
+                }
+            } catch (\Throwable $e) {
+                Log::warning("Customer sync to S1 failed for {$customer->email}: " . $e->getMessage());
             }
-        } catch (\Throwable $e) {
-            Log::warning("Customer sync to S1 failed for {$customer->email}: " . $e->getMessage());
-        }
+        })->onConnection('sync');
     }
 }

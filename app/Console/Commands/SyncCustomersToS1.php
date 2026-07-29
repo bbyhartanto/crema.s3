@@ -13,8 +13,7 @@ class SyncCustomersToS1 extends Command
 
     public function handle(): int
     {
-        $s1BaseUrl = env('S1_API_BASE_URL', 'http://127.0.0.1:8000');
-        $url = rtrim($s1BaseUrl, '/') . '/api/customer/sync/customer';
+        $s1Url = rtrim(env('S1_API_BASE_URL', 'https://roaster.crema.supply'), '') . '/api/customer/sync/customer';
 
         $customers = Customer::all();
         $this->info("Found {$customers->count()} customers in S3.");
@@ -27,7 +26,7 @@ class SyncCustomersToS1 extends Command
 
         foreach ($customers as $customer) {
             try {
-                $response = Http::timeout(5)->post($url, [
+                $response = Http::timeout(5)->retry(2, 100)->post($s1Url, [
                     'id' => $customer->id,
                     'name' => $customer->name,
                     'email' => $customer->email,
@@ -39,7 +38,7 @@ class SyncCustomersToS1 extends Command
                     $success++;
                 } else {
                     $failed++;
-                    $this->warn("Failed for {$customer->email}: " . $response->body());
+                    $this->warn("Failed for {$customer->email}: HTTP {$response->status()}");
                 }
             } catch (\Throwable $e) {
                 $failed++;
