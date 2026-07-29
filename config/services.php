@@ -23,11 +23,13 @@ return [
         'webhook_secret' => env('WEBHOOK_SECRET'),
     ],
 
-    // S3 → S1 customer projection webhook target. On the same VPS in production
-    // this resolves to loopback via /etc/hosts (127.0.0.1 roaster.crema.supply),
-    // bypassing Cloudflare.
+    // S3 → S1 customer projection webhook target. On the same VPS in production,
+    // set S1_INTERNAL_RESOLVE so the request resolves to loopback per-call
+    // (CURLOPT_RESOLVE) without editing /etc/hosts, bypassing Cloudflare while
+    // TLS still validates via SNI.
     's1' => [
         'internal_url' => env('S1_INTERNAL_BASE_URL', 'https://roaster.crema.supply'),
+        'internal_resolve' => env('S1_INTERNAL_RESOLVE'),
     ],
 
     'postmark' => [
