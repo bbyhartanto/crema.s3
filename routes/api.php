@@ -17,8 +17,10 @@ Route::get('/oauth/jwks', [JwksController::class, 'index']);
 Route::match(['get', 'post'], '/v1/search', [SearchController::class, 'search']);
 Route::get('/v1/products/{store_slug}/{product_slug}', [ProductDetailController::class, 'show']);
 
-// S1 Catalog Webhook Endpoint
-Route::post('/v1/webhooks/catalog', [CatalogWebhookController::class, 'handle']);
+// S1 Catalog Webhook Endpoint — verified by the internal.webhook middleware
+// (mandatory HMAC-SHA256 signature in X-Crema-Signature via WEBHOOK_SECRET).
+Route::post('/v1/webhooks/catalog', [CatalogWebhookController::class, 'handle'])
+    ->middleware('internal.webhook');
 
 // Outbound Click Tracker Endpoint (S2 frontend / Marketplaces)
 Route::get('/outbound', [ClickTrackerController::class, 'track']);

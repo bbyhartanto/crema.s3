@@ -114,20 +114,6 @@ return [
             // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
         ],
 
-        // Write connection to S1 database for customer sync
-        's1_sync' => [
-            'driver' => 'mysql',
-            'host' => env('S1_DB_HOST', '127.0.0.1'),
-            'port' => env('S1_DB_PORT', '3306'),
-            'database' => env('S1_DB_DATABASE', ''),
-            'username' => env('S1_DB_USERNAME', ''),
-            'password' => env('S1_DB_PASSWORD', ''),
-            'charset' => 'utf8mb4',
-            'collation' => 'utf8mb4_unicode_ci',
-            'strict' => true,
-            'engine' => null,
-        ],
-
     ],
 
     /*

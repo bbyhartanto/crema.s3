@@ -15,19 +15,14 @@ class CatalogWebhookController extends Controller
      */
     public function handle(Request $request): JsonResponse
     {
-        $secret = env('WEBHOOK_SECRET', 'crema_shared_secret_2026');
-        $signature = $request->header('X-Crema-Signature');
-
-        if ($signature) {
-            $computedSignature = hash_hmac('sha256', $request->getContent(), $secret);
-            if (!hash_equals($computedSignature, $signature)) {
-                return response()->json(['error' => 'Invalid signature'], 401);
-            }
-        }
+        // Signature verification is handled upstream by the internal.webhook
+        // middleware (HMAC-SHA256 of the raw body via X-Crema-Signature +
+        // WEBHOOK_SECRET). The header is mandatory there — a missing or
+        // invalid signature never reaches this controller.
 
         $products = $request->input('products');
 
-        if (!is_array($products)) {
+        if (! is_array($products)) {
             // Support payload if single product object or list of products directly
             $payload = $request->all();
             $products = isset($payload[0]) ? $payload : [$payload];
@@ -45,7 +40,7 @@ class CatalogWebhookController extends Controller
             $dispatchedChunks++;
         }
 
-        Log::info("CatalogWebhookController: Queued " . count($products) . " products in {$dispatchedChunks} Redis job chunks.");
+        Log::info('CatalogWebhookController: Queued '.count($products)." products in {$dispatchedChunks} Redis job chunks.");
 
         return response()->json([
             'status' => 'queued',

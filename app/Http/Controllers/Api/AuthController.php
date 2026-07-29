@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Api\CustomerSyncWebhookController;
 use App\Models\Customer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
@@ -26,7 +29,7 @@ class AuthController extends Controller
         ]);
 
         $customer = Customer::create([
-            'id' => (string) \Illuminate\Support\Str::uuid(),
+            'id' => (string) Str::uuid(),
             'name' => $validated['name'],
             'email' => strtolower(trim($validated['email'])),
             'password' => Hash::make($validated['password']),
@@ -39,8 +42,8 @@ class AuthController extends Controller
         $tokenResult = $customer->createToken('Crema Passport Token');
         $accessToken = $tokenResult->accessToken;
 
-        // Sync customer profile to S1 for business logic (orders, addresses, etc.)
-        CustomerSyncWebhookController::pushToS1($customer);
+        // S3 → S1 read-only projection is dispatched automatically by
+        // CustomerObserver on the "saved" Eloquent event (see AppServiceProvider).
 
         return response()->json([
             'token_type' => 'Bearer',
@@ -68,19 +71,19 @@ class AuthController extends Controller
 
         $customer = Customer::where('email', $credentials['email'])->first();
 
-        if (!$customer) {
+        if (! $customer) {
             return response()->json(['message' => 'No account found with this email address.'], 401);
         }
 
-        if (!Hash::check($credentials['password'], $customer->password)) {
+        if (! Hash::check($credentials['password'], $customer->password)) {
             return response()->json(['message' => 'Incorrect password. Please try again.'], 401);
         }
 
         $tokenResult = $customer->createToken('Crema Passport Token');
         $accessToken = $tokenResult->accessToken;
 
-        // Sync customer profile to S1 for business logic (orders, addresses, etc.)
-        CustomerSyncWebhookController::pushToS1($customer);
+        // S3 → S1 read-only projection is dispatched automatically by
+        // CustomerObserver on the "saved" Eloquent event (see AppServiceProvider).
 
         return response()->json([
             'token_type' => 'Bearer',
@@ -151,7 +154,7 @@ class AuthController extends Controller
         $customer = Customer::where('email', $email)->first();
 
         if ($customer && $customer->is_active) {
-            $token = \Illuminate\Support\Facades\Password::broker('customers')->createToken($customer);
+            $token = Password::broker('customers')->createToken($customer);
 
             // Build the reset URL pointing to the correct storefront
             $baseUrl = env('FRONTEND_URL', 'http://localhost:3000');
@@ -160,12 +163,12 @@ class AuthController extends Controller
 
             // If store context is provided, build tenant-scoped URL
             if ($storeSlug) {
-                $baseUrl .= '/' . $storeSlug;
+                $baseUrl .= '/'.$storeSlug;
             } elseif ($storeDomain) {
-                $baseUrl = 'https://' . preg_replace('/^https?:\/\//', '', $storeDomain);
+                $baseUrl = 'https://'.preg_replace('/^https?:\/\//', '', $storeDomain);
             }
 
-            $resetUrl = $baseUrl . '/reset-password?' . http_build_query([
+            $resetUrl = $baseUrl.'/reset-password?'.http_build_query([
                 'token' => $token,
                 'email' => $customer->email,
             ]);
@@ -173,14 +176,14 @@ class AuthController extends Controller
             // Delegate email sending to S1 (it owns store context + mail config)
             $s1BaseUrl = env('S1_API_BASE_URL', 'http://127.0.0.1:8000');
             try {
-                \Illuminate\Support\Facades\Http::timeout(5)->post(rtrim($s1BaseUrl, '/') . '/api/customer/send-reset-email', [
+                Http::timeout(5)->post(rtrim($s1BaseUrl, '/').'/api/customer/send-reset-email', [
                     'email' => $customer->email,
                     'reset_url' => $resetUrl,
                     'store_slug' => $storeSlug,
                     'store_domain' => $storeDomain,
                 ]);
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning("S3 forgotPassword: failed to delegate email to S1: " . $e->getMessage());
+                Log::warning('S3 forgotPassword: failed to delegate email to S1: '.$e->getMessage());
             }
 
             return response()->json([
@@ -205,7 +208,7 @@ class AuthController extends Controller
             'password' => 'required|string|min:8|confirmed',
         ]);
 
-        $status = \Illuminate\Support\Facades\Password::broker('customers')->reset(
+        $status = Password::broker('customers')->reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function (Customer $customer, string $password) {
                 $customer->forceFill([
@@ -219,7 +222,7 @@ class AuthController extends Controller
             }
         );
 
-        if ($status !== \Illuminate\Support\Facades\Password::PASSWORD_RESET) {
+        if ($status !== Password::PASSWORD_RESET) {
             return response()->json([
                 'message' => __($status),
             ], 422);

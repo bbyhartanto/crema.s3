@@ -14,6 +14,22 @@ return [
     |
     */
 
+    // Shared Crema inter-service contract. WEBHOOK_SECRET secures BOTH
+    // directions of the internal webhooks: the inbound catalog:sync-s3 webhook
+    // (verified by App\Http\Middleware\VerifyInternalWebhookSignature) and the
+    // outbound customer projection push signed in App\Jobs\PushCustomerProjectionToS1.
+    // Must match S1's WEBHOOK_SECRET.
+    'crema' => [
+        'webhook_secret' => env('WEBHOOK_SECRET'),
+    ],
+
+    // S3 → S1 customer projection webhook target. On the same VPS in production
+    // this resolves to loopback via /etc/hosts (127.0.0.1 roaster.crema.supply),
+    // bypassing Cloudflare.
+    's1' => [
+        'internal_url' => env('S1_INTERNAL_BASE_URL', 'https://roaster.crema.supply'),
+    ],
+
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],
