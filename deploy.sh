@@ -3,6 +3,10 @@ set -e
 
 echo "🚀 Deploying crema.s3 to Hostinger KVM1..."
 
+# Ensure Node.js & npm are in PATH for non-interactive SSH sessions on Hostinger
+export PATH=/opt/alt/alt-nodejs22/root/usr/bin:$PATH
+
+
 # Put app into maintenance mode
 php artisan down || true
 
