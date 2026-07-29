@@ -10,8 +10,11 @@ export PATH=/opt/alt/alt-nodejs22/root/usr/bin:$PATH
 # Put app into maintenance mode
 php artisan down || true
 
-# Pull latest code from main branch
-git pull origin main
+# Pull latest code from main branch safely
+git fetch origin main
+git checkout -f main
+git reset --hard origin/main
+
 
 # Install PHP dependencies
 composer install --no-interaction --prefer-dist --optimize-autoloader --ignore-platform-req=ext-sodium
