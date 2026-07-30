@@ -32,6 +32,12 @@ class CatalogWebhookController extends Controller
             return response()->json(['message' => 'No products in payload'], 400);
         }
 
+        if ($request->boolean('purge_stale') && is_array($request->input('active_product_ids'))) {
+            $activeIds = $request->input('active_product_ids');
+            $deactivated = \App\Models\CatalogItem::whereNotIn('id', $activeIds)->update(['is_available' => false]);
+            Log::info("CatalogWebhookController: Purged/Deactivated {$deactivated} stale catalog items not in active payload.");
+        }
+
         $chunks = array_chunk($products, 50);
         $dispatchedChunks = 0;
 

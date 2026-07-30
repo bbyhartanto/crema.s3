@@ -16,6 +16,31 @@ use Illuminate\Support\Str;
 class AuthController extends Controller
 {
     /**
+     * Check if a customer email exists in Crema Passport.
+     */
+    public function checkEmail(Request $request): JsonResponse
+    {
+        $request->validate([
+            'email' => 'required|email',
+        ]);
+
+        $email = strtolower(trim($request->email));
+        $exists = Customer::where('email', $email)->where('is_active', true)->exists();
+
+        if (! $exists) {
+            return response()->json([
+                'exists' => false,
+                'message' => 'No account found with this email address. Please register as a new user.',
+            ], 404);
+        }
+
+        return response()->json([
+            'exists' => true,
+            'message' => 'Account exists.',
+        ]);
+    }
+
+    /**
      * Register a new customer and issue Crema Passport JWT token.
      */
     public function register(Request $request): JsonResponse
@@ -41,9 +66,6 @@ class AuthController extends Controller
 
         $tokenResult = $customer->createToken('Crema Passport Token');
         $accessToken = $tokenResult->accessToken;
-
-        // S3 → S1 read-only projection is dispatched automatically by
-        // CustomerObserver on the "saved" Eloquent event (see AppServiceProvider).
 
         return response()->json([
             'token_type' => 'Bearer',
@@ -82,9 +104,6 @@ class AuthController extends Controller
         $tokenResult = $customer->createToken('Crema Passport Token');
         $accessToken = $tokenResult->accessToken;
 
-        // S3 → S1 read-only projection is dispatched automatically by
-        // CustomerObserver on the "saved" Eloquent event (see AppServiceProvider).
-
         return response()->json([
             'token_type' => 'Bearer',
             'access_token' => $accessToken,
@@ -118,7 +137,7 @@ class AuthController extends Controller
                 $exp = $payload['exp'] ?? null;
 
                 if ($jti) {
-                    $ttl = $exp ? max(1, $exp - time()) : 86400; // Default 24h if no exp
+                    $ttl = $exp ? max(1, $exp - time()) : 86400;
                     Redis::setex("jwt:blacklist:{$jti}", $ttl, 'revoked');
                 }
             }
@@ -139,8 +158,6 @@ class AuthController extends Controller
 
     /**
      * Issue a central Crema Passport password reset token and recovery link.
-     * The reset URL points to the storefront the request came from.
-     * The email is sent via S1 since S1 owns the store context + notification setup.
      */
     public function forgotPassword(Request $request): JsonResponse
     {
@@ -153,47 +170,48 @@ class AuthController extends Controller
         $email = strtolower(trim($request->email));
         $customer = Customer::where('email', $email)->first();
 
-        if ($customer && $customer->is_active) {
-            $token = Password::broker('customers')->createToken($customer);
-
-            // Build the reset URL pointing to the correct storefront
-            $baseUrl = env('FRONTEND_URL', 'http://localhost:3000');
-            $storeSlug = $request->input('store_slug');
-            $storeDomain = $request->input('store_domain');
-
-            // If store context is provided, build tenant-scoped URL
-            if ($storeSlug) {
-                $baseUrl .= '/'.$storeSlug;
-            } elseif ($storeDomain) {
-                $baseUrl = 'https://'.preg_replace('/^https?:\/\//', '', $storeDomain);
-            }
-
-            $resetUrl = $baseUrl.'/reset-password?'.http_build_query([
-                'token' => $token,
-                'email' => $customer->email,
-            ]);
-
-            // Delegate email sending to S1 (it owns store context + mail config)
-            $s1BaseUrl = env('S1_API_BASE_URL', 'http://127.0.0.1:8000');
-            try {
-                Http::timeout(5)->post(rtrim($s1BaseUrl, '/').'/api/customer/send-reset-email', [
-                    'email' => $customer->email,
-                    'reset_url' => $resetUrl,
-                    'store_slug' => $storeSlug,
-                    'store_domain' => $storeDomain,
-                ]);
-            } catch (\Throwable $e) {
-                Log::warning('S3 forgotPassword: failed to delegate email to S1: '.$e->getMessage());
-            }
-
+        if (! $customer || ! $customer->is_active) {
             return response()->json([
-                'message' => 'If an account exists for that email, a central Crema Passport recovery link has been sent.',
+                'exists' => false,
+                'message' => 'No account found with this email address. Please register as a new user.',
+            ], 404);
+        }
+
+        $token = Password::broker('customers')->createToken($customer);
+
+        // Build the reset URL pointing to the correct storefront
+        $baseUrl = env('FRONTEND_URL', 'http://localhost:3000');
+        $storeSlug = $request->input('store_slug');
+        $storeDomain = $request->input('store_domain');
+
+        if ($storeSlug) {
+            $baseUrl .= '/'.$storeSlug;
+        } elseif ($storeDomain) {
+            $baseUrl = 'https://'.preg_replace('/^https?:\/\//', '', $storeDomain);
+        }
+
+        $resetUrl = $baseUrl.'/reset-password?'.http_build_query([
+            'token' => $token,
+            'email' => $customer->email,
+        ]);
+
+        // Delegate email sending to S1
+        $s1BaseUrl = env('S1_API_BASE_URL', 'http://127.0.0.1:8000');
+        try {
+            Http::timeout(5)->post(rtrim($s1BaseUrl, '/').'/api/customer/send-reset-email', [
+                'email' => $customer->email,
                 'reset_url' => $resetUrl,
+                'store_slug' => $storeSlug,
+                'store_domain' => $storeDomain,
             ]);
+        } catch (\Throwable $e) {
+            Log::warning('S3 forgotPassword: failed to delegate email to S1: '.$e->getMessage());
         }
 
         return response()->json([
+            'exists' => true,
             'message' => 'If an account exists for that email, a central Crema Passport recovery link has been sent.',
+            'reset_url' => $resetUrl,
         ]);
     }
 
@@ -215,7 +233,6 @@ class AuthController extends Controller
                     'password' => Hash::make($password),
                 ])->save();
 
-                // Revoke active Passport tokens
                 $customer->tokens()->each(function ($token) {
                     $token->revoke();
                 });

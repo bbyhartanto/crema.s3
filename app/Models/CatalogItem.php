@@ -18,6 +18,7 @@ class CatalogItem extends Model
         'store_id',
         'store_name',
         'store_slug',
+        'store_theme_config',
         'name',
         'slug',
         'description',
@@ -37,6 +38,7 @@ class CatalogItem extends Model
     protected function casts(): array
     {
         return [
+            'store_theme_config' => 'array',
             'flavor_notes' => 'array',
             'coffee_attributes' => 'array',
             'field_values' => 'array',

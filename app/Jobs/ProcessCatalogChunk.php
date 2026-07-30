@@ -53,6 +53,7 @@ class ProcessCatalogChunk implements ShouldQueue
                 'store_id' => $product['store_id'] ?? null,
                 'store_name' => $product['store_name'] ?? 'Crema Roastery',
                 'store_slug' => $product['store_slug'] ?? 'default-roaster',
+                'store_theme_config' => $product['store_theme_config'] ?? null,
                 'name' => $product['name'] ?? 'Coffee Beans',
                 'slug' => $product['slug'] ?? '',
                 'description' => $product['description'] ?? '',
